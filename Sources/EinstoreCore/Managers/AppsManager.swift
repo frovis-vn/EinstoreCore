@@ -22,7 +22,7 @@ public class AppsManager {
         let q = try Cluster.query(on: req).filter(\Cluster.teamId ~~ teams.ids).clusterFilters(on: req).clusterSorting(on: req).decode(Cluster.Public.self)
         return q
     }
-    
+
     static func cluster(id clusterId: DbIdentifier, on req: Request) throws -> Future<Cluster> {
         return try req.me.teams().flatMap() { teams in
             return Cluster.query(on: req).filter(\Cluster.teamId ~~ teams.ids).filter(\Cluster.id == clusterId).first().map() { cluster in
@@ -33,7 +33,7 @@ public class AppsManager {
             }
         }
     }
-    
+
     static func builds(clusterId: DbIdentifier? = nil, on req: Request) throws -> Future<Builds> {
         return try req.me.teams().flatMap() { teams in
             let q = try Build.query(on: req).filter(\Build.teamId ~~ teams.ids).sort(\Build.created, .descending).paginate(on: req).appFilters(on: req).decode(Build.Public.self)
@@ -80,7 +80,7 @@ public class AppsManager {
             }
         }
     }
-    
+
     /// Shared upload method
     static func upload(team: Team, apiKey uploadToken: ApiKey? = nil, on req: Request) throws -> Future<Response> {
         guard let teamId = team.id else {
@@ -95,9 +95,9 @@ public class AppsManager {
                 let tempFilePath = URL(fileURLWithPath: ApiCoreBase.configuration.storage.local.root)
                     .appendingPathComponent(Build.localTempAppFile(on: req).relativePath)
                 try data.write(to: tempFilePath)
-                
+
                 let output: RunOutput = SwiftShell.run("unzip", "-l", tempFilePath.path)
-                
+
                 let platform: Build.Platform
                 if output.succeeded {
                     if output.stdout.contains("Payload/") {
@@ -113,7 +113,7 @@ public class AppsManager {
                 else {
                     throw ExtractorError.invalidAppContent
                 }
-                
+
                 let extractor: Extractor = try BaseExtractor.decoder(file: tempFilePath.path, platform: platform, on: req)
                 do {
                     return try extractor.process(teamId: teamId, on: req).flatMap() { build in
@@ -132,30 +132,7 @@ public class AppsManager {
                                     build: build,
                                     on: req
                                 )
-                                
-                                return try templateModel.setup(user: user.asDisplay(), on: req).flatMap() { _ in
-                                    let templator = try req.make(Templator.self)
-                                    let htmlFuture = try templator.get(name: "email.app-notification.html", data: templateModel, on: req)
-                                    let plainFuture = try templator.get(name: "email.app-notification.plain", data: templateModel, on: req)
-                                    return htmlFuture.flatMap() { htmlTemplate in
-                                        return plainFuture.flatMap() { plainTemplate in
-                                            let from = ApiCoreBase.configuration.mail.email
-                                            let subject = "Install \(build.name) - \(ApiCoreBase.configuration.server.name)" // TODO: Localize!!!!!!
-                                            return try team.users.query(on: req).all().flatMap() { teamUsers in
-                                                let userEmails: [String] = teamUsers.map({ $0.email }) // QUESTION: Do we want name in the email too?
-                                                let mail = Mailer.Message(from: from, to: from, bcc: userEmails, subject: subject, text: plainTemplate, html: htmlTemplate)
-                                                return try req.mail.send(mail).flatMap() { mailResult in
-                                                    switch mailResult {
-                                                    case .success:
-                                                        return try build.asResponse(.created, to: req)
-                                                    default:
-                                                        throw AuthError.emailFailedToSend
-                                                    }
-                                                }
-                                            }
-                                        }
-                                    }
-                                }
+                                return try build.asResponse(.created, to: req)
                             }
                         }
                     }
@@ -166,11 +143,11 @@ public class AppsManager {
             }
         }
     }
-    
+
     /// Handle tags during upload
     static func handleTags(on req: Request, baseTags: [String]? = nil, team: Team, build: Build) throws -> Future<Tags> {
         var stringTags: [String] = baseTags ?? []
-        
+
         // Process info tags
         if EinstoreCoreBase.configuration.tagsFromInfo.enable {
             if EinstoreCoreBase.configuration.tagsFromInfo.commit, let commit = build.info?.sourceControl?.commit?.id {
@@ -183,7 +160,7 @@ public class AppsManager {
                 stringTags.append("pm_\(pm)")
             }
         }
-        
+
         // Process custom tags
         if req.http.url.query != nil {
             // Internal struct for tags in the URL
@@ -209,7 +186,7 @@ public class AppsManager {
         }
         return try TagsManager.save(tags: stringTags.safeTagText(), for: build, team: team, on: req)
     }
-    
+
     static func delete(cluster: Cluster?, on req: Request) throws -> Future<Response> {
         guard let cluster = cluster, let teamId = cluster.teamId else {
             throw AppsController.Error.clusterInconsistency
@@ -220,18 +197,18 @@ public class AppsManager {
                 try apps.forEach({
                     try futures.append(contentsOf: self.delete(build: $0, on: req))
                 })
-                
+
                 return futures.flatten(on: req).flatMap() { _ in
                     return try cluster.delete(on: req).asResponse(to: req)
                 }
             }
         }
     }
-    
+
     static func delete(build: Build, countCluster cluster: Cluster? = nil, on req: Request) throws -> [Future<Void>] {
         var futures: [Future<Void>] = []
         // TODO: Refactor and split following into smaller methods!!
-        
+
         // Handle cluster data
         if let cluster = cluster {
             if cluster.buildCount <= 1 {
@@ -247,7 +224,7 @@ public class AppsManager {
                 futures.append(save)
             }
         }
-        
+
         let f = try build.tags.query(on: req).all().flatMap(to: Void.self) { tags in
             var futures: [Future<Void>] = []
             try tags.forEach({ tag in
@@ -261,16 +238,16 @@ public class AppsManager {
                 }
                 futures.append(tagFuture)
             })
-            
+
             // Delete app
             futures.append(build.delete(on: req).flatten())
-            
+
             // Delete all files
             guard let path = build.targetFolderPath?.relativePath else {
                 // TODO: Report if there was a problem somehow!!
                 return req.future()
             }
-            
+
             let fm = try req.makeFileCore()
             let deleteFuture = try fm.delete(file: path, on: req).catchMap({ err -> () in
                 return Void()
@@ -279,8 +256,8 @@ public class AppsManager {
             return futures.flatten(on: req)
         }
         futures.append(f)
-        
+
         return futures
     }
-    
+
 }
