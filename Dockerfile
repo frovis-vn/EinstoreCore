@@ -5,7 +5,7 @@ COPY . /app
 
 ARG CONFIGURATION="release"
 
-RUN swift build --configuration ${CONFIGURATION} --product EinstoreRun
+RUN swift build -Xswiftc -suppress-warnings --configuration ${CONFIGURATION} --product EinstoreRun
 
 # ------------------------------------------------------------------------------
 

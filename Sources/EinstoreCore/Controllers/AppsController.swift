@@ -16,16 +16,16 @@ import FileCore
 
 
 class AppsController: Controller {
-    
+
     /// Error
     enum Error: FrontendError {
-        
+
         /// Invalid platform
         case invalidPlatform
-        
+
         /// App cluster inconsistent
         case clusterInconsistency
-        
+
         /// Error code
         var identifier: String {
             switch self {
@@ -35,7 +35,7 @@ class AppsController: Controller {
                 return "boost.app.cluster_inconsistency"
             }
         }
-        
+
         /// Error reason
         var reason: String {
             switch self {
@@ -45,44 +45,44 @@ class AppsController: Controller {
                 return "Missing or corrupted app cluster data"
             }
         }
-        
+
         /// Error HTTP status code
         var status: HTTPStatus {
             return .conflict
         }
-        
+
     }
-    
+
     /// Loading routes
     static func boot(router: Router, secure: Router, debug: Router) throws {
         @discardableResult func filter<M, DB>(q: inout QueryBuilder<M, DB>, tags: [DbIdentifier]) -> QueryBuilder<M, DB> {
             return q
         }
-        
+
         // Get list of builds based on input parameters
         secure.get("builds") { (req) -> Future<Builds> in
             return try AppsManager.builds(on: req)
         }
-        
+
         // Get a cluster
         secure.get("apps", DbIdentifier.parameter) { (req) -> Future<Cluster> in
             let clusterId = try req.parameters.next(DbIdentifier.self)
             return try AppsManager.cluster(id: clusterId, on: req)
         }
-        
+
         // Get list of builds for a cluster
         secure.get("apps", DbIdentifier.parameter, "builds") { (req) -> Future<Builds> in
             let clusterId = try req.parameters.next(DbIdentifier.self)
             return try AppsManager.builds(clusterId: clusterId, on: req)
         }
-        
+
         // Overview for apps in all teams
         secure.get("apps") { (req) -> Future<[Cluster.Public]> in
             return try req.me.teams().flatMap() { teams in
                 return try AppsManager.overviewQuery(teams: teams, on: req).all()
             }
         }
-        
+
         // Overview for apps in selected team
         secure.get("teams", DbIdentifier.parameter, "apps") { (req) -> Future<[Cluster.Public]> in
             let teamId = try req.parameters.next(DbIdentifier.self)
@@ -90,7 +90,7 @@ class AppsController: Controller {
                 return try AppsManager.overviewQuery(teams: teams, on: req).filter(\Cluster.teamId == teamId).all()
             }
         }
-        
+
         // Team apps info
         secure.get("teams", DbIdentifier.parameter, "apps", "info") { (req) -> Future<Build.Overview> in
             let teamId = try req.parameters.next(DbIdentifier.self)
@@ -105,7 +105,7 @@ class AppsController: Controller {
                 }
             }
         }
-        
+
         // Build detail
         secure.get("builds", DbIdentifier.parameter) { (req) -> Future<Build.Public> in
             let buildId = try req.parameters.next(DbIdentifier.self)
@@ -118,7 +118,7 @@ class AppsController: Controller {
                 }
             }
         }
-        
+
         // Build icon
         secure.get("builds", DbIdentifier.parameter, "icon") { (req) -> Future<Response> in
             let buildId = try req.parameters.next(DbIdentifier.self)
@@ -143,7 +143,7 @@ class AppsController: Controller {
                 }
             }
         }
-        
+
         // Build download history
         secure.get("builds", DbIdentifier.parameter, "history") { (req) -> Future<[Download.Public]> in
             let buildId = try req.parameters.next(DbIdentifier.self)
@@ -152,7 +152,7 @@ class AppsController: Controller {
                     guard let _ = build else {
                         throw ErrorsCore.HTTPError.notFound
                     }
-                    
+
                     let q = Download.query(on: req).join(\User.id, to: \Download.userId)
                     q.filter(\Download.buildId == buildId).filter(\Download.teamId ~~ teams.ids)
                     return q.sort(\Download.created, .descending).alsoDecode(User.self).all().map() { arr in
@@ -161,7 +161,7 @@ class AppsController: Controller {
                 }
             }
         }
-        
+
         // Build download auth
         secure.get("builds", DbIdentifier.parameter, "auth") { (req) -> Future<Response> in
             guard let userId = try req.me.user().id else {
@@ -185,7 +185,7 @@ class AppsController: Controller {
                 }
             }
         }
-        
+
         // Build plist
         // Plist documentation: https://help.apple.com/deployment/ios/#/apd11fd167c4
         router.get("builds", UUID.parameter, "plist", UUID.parameter, String.parameter) { (req) -> Future<Response> in
@@ -211,7 +211,7 @@ class AppsController: Controller {
                 }
             }
         }
-        
+
         // Build file
         router.get("builds", DbIdentifier.parameter, "file", UUID.parameter, String.parameter) { (req) -> Future<Response> in
             let _ = try req.parameters.next(DbIdentifier.self)
@@ -231,7 +231,7 @@ class AppsController: Controller {
                     }
                     let response = try req.response.basic(status: .ok)
                     response.http.headers = HTTPHeaders([("Content-Type", "\(build.platform.mime)"), ("Content-Disposition", "attachment; filename=\"\(build.name.safeText).\(build.platform.fileExtension)\"")])
-                    
+
                     // Save an info about the download
                     let download = Download(buildId: key.buildId, userId: key.userId, teamId: build.teamId, action: .download)
                     return download.save(on: req).flatMap() { download in
@@ -245,7 +245,7 @@ class AppsController: Controller {
                 }
             }
         }
-        
+
         // Delete a whole cluster of apps
         secure.delete("apps", DbIdentifier.parameter) { (req) -> Future<Response> in
             let clusterId = try req.parameters.next(DbIdentifier.self)
@@ -253,7 +253,7 @@ class AppsController: Controller {
                 return try AppsManager.delete(cluster: cluster, on: req)
             }
         }
-        
+
         // Delete a build
         secure.delete("builds", DbIdentifier.parameter) { (req) -> Future<Response> in
             let buildId = try req.parameters.next(DbIdentifier.self)
@@ -266,13 +266,13 @@ class AppsController: Controller {
                         guard let cluster = cluster else {
                             throw Error.clusterInconsistency
                         }
-                        
+
                         return try AppsManager.delete(build: build, countCluster: cluster, on: req).flatten(on: req).asResponse(to: req)
                     }
                 }
             }
         }
-        
+
         // Upload a build from CI with Upload API key
         router.post("builds") { (req) -> Future<Response> in
             guard let token = try? req.query.decode(ApiKey.Token.self) else {
@@ -282,12 +282,16 @@ class AppsController: Controller {
                 guard let uploadToken = uploadToken else {
                     throw AuthError.authenticationFailed
                 }
-                return try req.me.verifiedTeam(id: uploadToken.teamId).flatMap() { team in
+                /// teamId
+                return try Team.query(on: req).filter(\Team.id == uploadToken.teamId).first().flatMap() { team in
+                    guard let team =  team else{
+                        throw AuthError.authenticationFailed
+                    }
                     return try AppsManager.upload(team: team, apiKey: uploadToken, on: req)
                 }
             }
         }
-        
+
         // Upload a build from authenticated session (browser, app, etc ...)
         secure.post("teams", UUID.parameter, "builds") { (req) -> Future<Response> in
             let teamId = try req.parameters.next(DbIdentifier.self)
@@ -296,5 +300,5 @@ class AppsController: Controller {
             }
         }
     }
-    
+
 }

@@ -121,7 +121,7 @@ public class AppsManager {
                             let baseTags = uploadToken?.tags?.split(separator: ",").asStrings()
                             return try handleTags(on: req, baseTags: baseTags, team: team, build: build).flatMap() { (_) -> Future<Response> in
                                 let inputLinkFromQuery = try? req.query.decode(Build.DetailTemplate.Link.self)
-                                let user = (try? req.me.user()) ?? User(
+                                let user = User(
                                     username: "",
                                     firstname: "",
                                     lastname: "",
